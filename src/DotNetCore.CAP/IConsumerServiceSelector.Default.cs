@@ -42,13 +42,7 @@ namespace DotNetCore.CAP
 
         public IReadOnlyList<ConsumerExecutorDescriptor> SelectCandidates()
         {
-            var executorDescriptorList = new List<ConsumerExecutorDescriptor>();
-
-            executorDescriptorList.AddRange(FindConsumersFromInterfaceTypes(_serviceProvider));
-
-            executorDescriptorList.AddRange(FindConsumersFromControllerTypes());
-
-            return executorDescriptorList;
+            return FindConsumersFromControllerAndInterfaceTypes().ToList();
         }
 
         public ConsumerExecutorDescriptor SelectBestCandidate(string key, IReadOnlyList<ConsumerExecutorDescriptor> executeDescriptor)
@@ -71,44 +65,30 @@ namespace DotNetCore.CAP
             return result;
         }
 
-        protected virtual IEnumerable<ConsumerExecutorDescriptor> FindConsumersFromInterfaceTypes(
-            IServiceProvider provider)
+        protected virtual IEnumerable<ConsumerExecutorDescriptor> FindConsumersFromControllerAndInterfaceTypes()
         {
             var executorDescriptorList = new List<ConsumerExecutorDescriptor>();
-
-            using (var scoped = provider.CreateScope())
+            var assemblyNames = new List<AssemblyName>() { Assembly.GetEntryAssembly().GetName() };
+            assemblyNames.AddRange(Assembly.GetEntryAssembly().GetReferencedAssemblies());
+            foreach (var assemblyName in assemblyNames)
             {
-                var scopedProvider = scoped.ServiceProvider;
-                var consumerServices = scopedProvider.GetServices<ICapSubscribe>();
-                foreach (var service in consumerServices)
+                Assembly assembly = Assembly.Load(assemblyName);
+                
+                var types = assembly.ExportedTypes;
+                foreach (var type in types)
                 {
-                    var typeInfo = service.GetType().GetTypeInfo();
-                    if (!typeof(ICapSubscribe).GetTypeInfo().IsAssignableFrom(typeInfo))
+                    var typeInfo = type.GetTypeInfo();
+                    if (Helper.IsController(typeInfo))
                     {
-                        continue;
+                        executorDescriptorList.AddRange(GetTopicAttributesDescription(typeInfo));
+                    }
+                    else if (typeof(ICapSubscribe).GetTypeInfo().IsAssignableFrom(typeInfo))
+                    {
+                        executorDescriptorList.AddRange(GetTopicAttributesDescription(typeInfo));
                     }
 
-                    executorDescriptorList.AddRange(GetTopicAttributesDescription(typeInfo));
-                }
-
-                return executorDescriptorList;
-            }
-        }
-
-        protected virtual IEnumerable<ConsumerExecutorDescriptor> FindConsumersFromControllerTypes()
-        {
-            var executorDescriptorList = new List<ConsumerExecutorDescriptor>();
-
-            var types = Assembly.GetEntryAssembly().ExportedTypes;
-            foreach (var type in types)
-            {
-                var typeInfo = type.GetTypeInfo();
-                if (Helper.IsController(typeInfo))
-                {
-                    executorDescriptorList.AddRange(GetTopicAttributesDescription(typeInfo));
                 }
             }
-
             return executorDescriptorList;
         }
 
